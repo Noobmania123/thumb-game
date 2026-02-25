@@ -20,7 +20,7 @@ A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a U
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python main.py
+python main.py --performance auto
 ```
 
 ## Controls
@@ -55,6 +55,9 @@ python main.py --mode online-join --host <HOST_IP> --port 50555
 
 # Start with race mode enabled immediately
 python main.py --mode single --race
+
+# Force low-spec profile (best for older i3 laptops)
+python main.py --performance low
 ```
 
 > For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
@@ -77,3 +80,9 @@ Output:
 ## Latitude 3120 performance tips
 - Keep laptop on AC power + High Performance mode.
 - If FPS is low, reduce `DRAW_DISTANCE` in `main.py` from `220` to ~`150`.
+
+
+## Responsiveness on older laptops
+- Default `--performance auto` now auto-selects lighter settings on low-core CPUs.
+- If the game still feels slow/unresponsive, run with `--performance low`.
+- `low` uses lower resolution, fewer projected segments, fewer cloud layers, and a lower FPS cap.
