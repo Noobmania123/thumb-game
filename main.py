@@ -7,31 +7,37 @@ import sys
 import time
 from dataclasses import dataclass
 
+# Prefer software rendering on older/low-power GPUs to avoid black-screen GPU driver issues.
+os.environ.setdefault("SDL_RENDER_DRIVER", "software")
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+
 import pygame
 
-# --- Game tuning constants ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 450
-FPS = 50
+# --- Base tuning constants ---
 ROAD_WIDTH = 2200
 SEGMENT_LENGTH = 200
-DRAW_DISTANCE = 140
 CAMERA_HEIGHT = 1000
 CAMERA_DEPTH = 0.84
 TRACK_LENGTH = 1600
 RACE_LAPS = 3
-CLOUD_LAYERS = 2
-
-MAX_SPEED = 0.0
-ACCEL = 0.0
-BRAKING = 0.0
-DECEL = 0.0
 
 WALL_LIMIT = 0.95
 WALL_BOUNCE = 0.45
 CRASH_COOLDOWN = 0.9
 
 MODE_ORDER = ["single", "local", "online-host", "online-join"]
+PERF_ORDER = ["ultra-low", "low", "normal"]
+
+# Runtime settings (set by performance profile)
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 450
+FPS = 45
+DRAW_DISTANCE = 90
+CLOUD_LAYERS = 1
+MAX_SPEED = 0.0
+ACCEL = 0.0
+BRAKING = 0.0
+DECEL = 0.0
 
 
 @dataclass
@@ -116,32 +122,64 @@ class NetSession:
             self.sock.close()
 
 
-def apply_performance_profile(performance: str) -> None:
-    global SCREEN_WIDTH, SCREEN_HEIGHT, FPS, DRAW_DISTANCE, CLOUD_LAYERS
-    if performance == "auto":
-        cpu = os.cpu_count() or 2
-        performance = "low" if cpu <= 4 else "normal"
+def recalc_physics() -> None:
+    global MAX_SPEED, ACCEL, BRAKING, DECEL
+    MAX_SPEED = SEGMENT_LENGTH / (1 / FPS) * 0.9
+    ACCEL = MAX_SPEED / 5.8
+    BRAKING = -MAX_SPEED / 3.0
+    DECEL = -MAX_SPEED / 8.5
 
-    if performance == "low":
+
+def pick_auto_profile() -> str:
+    cpu_count = os.cpu_count() or 2
+    cpu_name = (os.environ.get("PROCESSOR_IDENTIFIER") or "").lower()
+
+    if cpu_count <= 2 or "pentium" in cpu_name or "celeron" in cpu_name:
+        return "ultra-low"
+    if cpu_count <= 4:
+        return "low"
+    return "normal"
+
+
+def apply_performance_profile(perf: str) -> str:
+    global SCREEN_WIDTH, SCREEN_HEIGHT, FPS, DRAW_DISTANCE, CLOUD_LAYERS
+    profile = pick_auto_profile() if perf == "auto" else perf
+
+    if profile == "ultra-low":
+        SCREEN_WIDTH, SCREEN_HEIGHT = 640, 360
+        FPS = 40
+        DRAW_DISTANCE = 72
+        CLOUD_LAYERS = 0
+    elif profile == "low":
         SCREEN_WIDTH, SCREEN_HEIGHT = 800, 450
         FPS = 45
-        DRAW_DISTANCE = 110
+        DRAW_DISTANCE = 100
         CLOUD_LAYERS = 1
     else:
         SCREEN_WIDTH, SCREEN_HEIGHT = 960, 540
         FPS = 60
-        DRAW_DISTANCE = 180
+        DRAW_DISTANCE = 160
         CLOUD_LAYERS = 3
 
     recalc_physics()
+    return profile
 
 
-def recalc_physics() -> None:
-    global MAX_SPEED, ACCEL, BRAKING, DECEL
-    MAX_SPEED = SEGMENT_LENGTH / (1 / FPS) * 0.9
-    ACCEL = MAX_SPEED / 5.6
-    BRAKING = -MAX_SPEED / 3.0
-    DECEL = -MAX_SPEED / 8
+def adapt_performance(current_profile: str, smoothed_dt: float) -> str:
+    """Downgrade quality automatically if frame-time is too high for sustained periods."""
+    global SCREEN_WIDTH, SCREEN_HEIGHT, FPS, DRAW_DISTANCE, CLOUD_LAYERS
+
+    if smoothed_dt < 0.038:  # ~26+ fps sustained, no downgrade needed
+        return current_profile
+
+    idx = PERF_ORDER.index(current_profile)
+    if idx == 0:
+        # Already ultra-low; trim draw distance only.
+        DRAW_DISTANCE = max(56, DRAW_DISTANCE - 4)
+        return current_profile
+
+    next_profile = PERF_ORDER[idx - 1]
+    return apply_performance_profile(next_profile)
 
 
 def build_track() -> list[Segment]:
@@ -158,17 +196,24 @@ def build_track() -> list[Segment]:
 
     cursor = 0
     pattern = [
-        (180, 0.0, 0), (90, 0.9, 40), (80, 1.25, 30), (120, 0.0, -30),
-        (110, -1.15, -50), (90, -0.9, 20), (200, 0.0, 0), (100, 1.45, 70),
-        (120, 0.0, 40), (140, -1.3, -70), (140, 0.0, 0),
+        (180, 0.0, 0),
+        (90, 0.9, 40),
+        (80, 1.25, 30),
+        (120, 0.0, -30),
+        (110, -1.15, -50),
+        (90, -0.9, 20),
+        (200, 0.0, 0),
+        (100, 1.45, 70),
+        (120, 0.0, 40),
+        (140, -1.3, -70),
+        (140, 0.0, 0),
     ]
 
     while cursor < TRACK_LENGTH:
         for length, curve, hill in pattern:
             if cursor >= TRACK_LENGTH:
                 break
-            real_len = min(length, TRACK_LENGTH - cursor)
-            cursor = add_section(cursor, real_len, curve, hill)
+            cursor = add_section(cursor, min(length, TRACK_LENGTH - cursor), curve, hill)
 
     return track
 
@@ -187,6 +232,9 @@ def draw_background(surface: pygame.Surface, speed_percent: float) -> None:
     pygame.draw.rect(surface, (111, 180, 255), pygame.Rect(0, 0, SCREEN_WIDTH, int(horizon)))
     pygame.draw.rect(surface, (90, 180, 80), pygame.Rect(0, int(horizon), SCREEN_WIDTH, SCREEN_HEIGHT - int(horizon)))
 
+    if CLOUD_LAYERS <= 0:
+        return
+
     offset = int(pygame.time.get_ticks() * (0.02 + speed_percent * 0.05)) % SCREEN_WIDTH
     for i in range(-1, CLOUD_LAYERS + 1):
         x = i * 340 - offset
@@ -201,7 +249,6 @@ def draw_segment(surface: pygame.Surface, x1: float, y1: float, w1: float, x2: f
     rumble_col = (220, 40, 40) if dark else (240, 240, 240)
 
     pygame.draw.polygon(surface, (80, 160, 70), [(0, y2), (SCREEN_WIDTH, y2), (SCREEN_WIDTH, y1), (0, y1)])
-
     rumble1 = w1 * 1.15
     rumble2 = w2 * 1.15
     pygame.draw.polygon(surface, rumble_col, [(x1 - rumble1, y1), (x1 - w1, y1), (x2 - w2, y2), (x2 - rumble2, y2)])
@@ -212,8 +259,8 @@ def draw_segment(surface: pygame.Surface, x1: float, y1: float, w1: float, x2: f
     lane_w2 = w2 * 0.03
     pygame.draw.polygon(surface, (240, 240, 160), [(x1 - lane_w1, y1), (x1 + lane_w1, y1), (x2 + lane_w2, y2), (x2 - lane_w2, y2)])
 
-    wall_h1 = w1 * 0.15
-    wall_h2 = w2 * 0.15
+    wall_h1 = w1 * 0.14
+    wall_h2 = w2 * 0.14
     left_wall = [(x1 - w1 * WALL_LIMIT, y1), (x1 - w1 * WALL_LIMIT, y1 - wall_h1), (x2 - w2 * WALL_LIMIT, y2 - wall_h2), (x2 - w2 * WALL_LIMIT, y2)]
     right_wall = [(x1 + w1 * WALL_LIMIT, y1), (x1 + w1 * WALL_LIMIT, y1 - wall_h1), (x2 + w2 * WALL_LIMIT, y2 - wall_h2), (x2 + w2 * WALL_LIMIT, y2)]
     pygame.draw.polygon(surface, (165, 165, 180), left_wall)
@@ -221,15 +268,15 @@ def draw_segment(surface: pygame.Surface, x1: float, y1: float, w1: float, x2: f
 
 
 def draw_player_car(surface: pygame.Surface, player: PlayerState, speed_percent: float, crashed: bool, x_offset: int = 0) -> None:
-    base_y = SCREEN_HEIGHT - 80
+    base_y = SCREEN_HEIGHT - 70
     center_x = SCREEN_WIDTH // 2 + int(player.x * SCREEN_WIDTH * 0.35) + x_offset
-    bob = int(math.sin(pygame.time.get_ticks() * 0.02) * (2 + speed_percent * 6))
+    bob = int(math.sin(pygame.time.get_ticks() * 0.02) * (2 + speed_percent * 5))
     color = (255, 180, 30) if crashed else player.car_color
 
-    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x - 40, base_y + 6 + bob, 12, 16))
-    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x + 28, base_y + 6 + bob, 12, 16))
-    pygame.draw.rect(surface, color, pygame.Rect(center_x - 34, base_y - 20 + bob, 68, 34), border_radius=5)
-    pygame.draw.rect(surface, (200, 225, 245), pygame.Rect(center_x - 20, base_y - 38 + bob, 40, 18), border_radius=4)
+    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x - 35, base_y + 6 + bob, 10, 14))
+    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x + 25, base_y + 6 + bob, 10, 14))
+    pygame.draw.rect(surface, color, pygame.Rect(center_x - 30, base_y - 18 + bob, 60, 30), border_radius=5)
+    pygame.draw.rect(surface, (200, 225, 245), pygame.Rect(center_x - 17, base_y - 32 + bob, 34, 14), border_radius=4)
 
 
 def draw_remote_marker(surface: pygame.Surface, rel_z: float, rel_x: float, color: tuple[int, int, int]) -> None:
@@ -237,8 +284,8 @@ def draw_remote_marker(surface: pygame.Surface, rel_z: float, rel_x: float, colo
         return
     scale = CAMERA_DEPTH / rel_z
     marker_x = int((1 + scale * (rel_x * ROAD_WIDTH)) * SCREEN_WIDTH / 2)
-    marker_y = int((1 - scale * (-180)) * SCREEN_HEIGHT / 2)
-    size = max(8, int(scale * 420))
+    marker_y = int((1 - scale * (-160)) * SCREEN_HEIGHT / 2)
+    size = max(6, int(scale * 380))
     pygame.draw.rect(surface, color, pygame.Rect(marker_x - size // 2, marker_y - size, size, size), border_radius=3)
 
 
@@ -259,7 +306,16 @@ def handle_crash(player: PlayerState, now: float) -> bool:
     return True
 
 
-def update_player(player: PlayerState, dt: float, steer_left: bool, steer_right: bool, accelerate: bool, brake: bool, now: float, can_drive: bool) -> bool:
+def update_player(
+    player: PlayerState,
+    dt: float,
+    steer_left: bool,
+    steer_right: bool,
+    accelerate: bool,
+    brake: bool,
+    now: float,
+    can_drive: bool,
+) -> bool:
     accel = DECEL
     if can_drive:
         if accelerate:
@@ -270,10 +326,11 @@ def update_player(player: PlayerState, dt: float, steer_left: bool, steer_right:
     if now < player.crashed_until:
         accel = min(accel, DECEL)
 
+    speed_factor = player.speed / max(1.0, MAX_SPEED)
     if steer_left:
-        player.x -= 2.3 * dt * (player.speed / max(1.0, MAX_SPEED) + 0.3)
+        player.x -= 2.3 * dt * (speed_factor + 0.3)
     if steer_right:
-        player.x += 2.3 * dt * (player.speed / max(1.0, MAX_SPEED) + 0.3)
+        player.x += 2.3 * dt * (speed_factor + 0.3)
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
     crashed = handle_crash(player, now)
@@ -283,12 +340,12 @@ def update_player(player: PlayerState, dt: float, steer_left: bool, steer_right:
     player.position = (player.position + player.speed * dt) % total
     if player.position < prev and player.speed > 0:
         player.lap += 1
+
     return crashed
 
 
 def render_world(surface: pygame.Surface, track: list[Segment], camera_player: PlayerState, remote_player: PlayerState | None) -> None:
-    speed_percent = camera_player.speed / max(1.0, MAX_SPEED)
-    draw_background(surface, speed_percent)
+    draw_background(surface, camera_player.speed / max(1.0, MAX_SPEED))
 
     base_segment = int(camera_player.position // SEGMENT_LENGTH) % TRACK_LENGTH
     max_y = SCREEN_HEIGHT
@@ -302,7 +359,6 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
 
         z1 = n * SEGMENT_LENGTH
         z2 = (n + 1) * SEGMENT_LENGTH
-
         x1, y1, w1 = project(x, seg.y, z1, camera_player.x * ROAD_WIDTH, CAMERA_HEIGHT, 0)
         x += dx
         dx += seg.curve * 0.03
@@ -314,7 +370,9 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
         draw_segment(surface, x1, y1, w1, x2, y2, w2, (idx // 3) % 2 == 0)
 
     if remote_player:
-        draw_remote_marker(surface, wrap_distance(remote_player.position, camera_player.position), remote_player.x - camera_player.x, remote_player.car_color)
+        rel_z = wrap_distance(remote_player.position, camera_player.position)
+        rel_x = remote_player.x - camera_player.x
+        draw_remote_marker(surface, rel_z, rel_x, remote_player.car_color)
 
 
 def mode_label(mode: str) -> str:
@@ -335,13 +393,14 @@ def init_mode(mode: str, host: str, port: int, race_enabled: bool) -> tuple[Play
     p1 = PlayerState(name="P1", car_color=(230, 40, 50), x=-0.2)
     p2 = PlayerState(name="P2", car_color=(40, 160, 255), x=0.2)
     net = NetSession(mode, host, port)
-    race = RaceState(enabled=race_enabled, countdown_end=time.perf_counter() + 3.0)
+    race = RaceState(enabled=race_enabled, countdown_end=time.perf_counter() + 2.5)
     return p1, p2, net, race
 
 
 def check_race_finish(race: RaceState, p1: PlayerState, p2: PlayerState, mode: str) -> None:
     if not race.enabled or race.finished:
         return
+
     if p1.lap >= RACE_LAPS:
         race.finished = True
         race.winner = p1.name
@@ -350,22 +409,37 @@ def check_race_finish(race: RaceState, p1: PlayerState, p2: PlayerState, mode: s
         race.winner = p2.name
 
 
+def show_loading_screen(screen: pygame.Surface, text: str) -> None:
+    screen.fill((20, 20, 30))
+    font = pygame.font.SysFont("consolas", 22)
+    label = font.render(text, True, (230, 230, 230))
+    screen.blit(label, (screen.get_width() // 2 - label.get_width() // 2, screen.get_height() // 2 - label.get_height() // 2))
+    pygame.display.flip()
+    pygame.event.pump()
+
+
 def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -> None:
-    apply_performance_profile(performance)
+    profile = apply_performance_profile(performance)
 
     pygame.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.RESIZABLE)
     pygame.display.set_caption("Thumb Drive Racer")
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont("consolas", 18)
-    big_font = pygame.font.SysFont("consolas", 36, bold=True)
 
+    show_loading_screen(screen, "Loading track...")
     track = build_track()
+
+    font = pygame.font.SysFont("consolas", 17)
+    big_font = pygame.font.SysFont("consolas", 32, bold=True)
     player1, player2, net, race = init_mode(mode, host, port, race_enabled)
+
+    smoothed_dt = 1 / max(1, FPS)
+    last_adapt = time.perf_counter()
 
     running = True
     while running:
-        dt = min(0.035, clock.tick(FPS) / 1000)
+        dt = min(0.04, clock.tick(FPS) / 1000)
+        smoothed_dt = smoothed_dt * 0.92 + dt * 0.08
         now = time.perf_counter()
 
         for event in pygame.event.get():
@@ -395,30 +469,35 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
                 elif event.key == pygame.K_r:
                     race.enabled = not race.enabled
                     player1, player2, net, race = init_mode(mode, host, port, race.enabled)
+                elif event.key == pygame.K_F8:
+                    profile = apply_performance_profile(cycle_perf(profile))
 
         keys = pygame.key.get_pressed()
         race_started = not race.enabled or now >= race.countdown_end
-        race_finished = race.enabled and race.finished
-        can_drive = race_started and not race_finished
+        can_drive = race_started and not race.finished
 
         crash1 = update_player(
-            player1, dt,
+            player1,
+            dt,
             steer_left=keys[pygame.K_a] or keys[pygame.K_LEFT],
             steer_right=keys[pygame.K_d] or keys[pygame.K_RIGHT],
             accelerate=keys[pygame.K_w] or keys[pygame.K_UP],
             brake=keys[pygame.K_s] or keys[pygame.K_DOWN],
-            now=now, can_drive=can_drive,
+            now=now,
+            can_drive=can_drive,
         )
 
         crash2 = False
         if mode == "local":
             crash2 = update_player(
-                player2, dt,
+                player2,
+                dt,
                 steer_left=keys[pygame.K_j],
                 steer_right=keys[pygame.K_l],
                 accelerate=keys[pygame.K_i],
                 brake=keys[pygame.K_k],
-                now=now, can_drive=can_drive,
+                now=now,
+                can_drive=can_drive,
             )
         elif mode in {"online-host", "online-join"}:
             net.tick({"position": player1.position, "speed": player1.speed, "x": player1.x, "lap": float(player1.lap)})
@@ -429,20 +508,28 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
 
         check_race_finish(race, player1, player2, mode)
 
+        # Adaptive downgrade every ~2 seconds if frame-time stays poor.
+        if now - last_adapt > 2.0:
+            new_profile = adapt_performance(profile, smoothed_dt)
+            if new_profile != profile:
+                profile = new_profile
+            last_adapt = now
+
         render_world(screen, track, player1, player2 if mode != "single" else None)
         draw_player_car(screen, player1, player1.speed / max(1.0, MAX_SPEED), now < player1.crashed_until)
         if mode == "local":
-            draw_player_car(screen, player2, player2.speed / max(1.0, MAX_SPEED), now < player2.crashed_until, x_offset=180)
+            draw_player_car(screen, player2, player2.speed / max(1.0, MAX_SPEED), now < player2.crashed_until, x_offset=140)
 
         hud_lines = [
-            f"Mode: {mode_label(mode)} | Perf: {performance} | TAB/F1-F4 switch",
+            f"Mode: {mode_label(mode)} | Perf: {profile} (F8 cycle)",
             f"P1 Speed: {int(player1.speed * 0.15):03d} km/h  Lap: {player1.lap}/{RACE_LAPS if race.enabled else '-'}",
-            "Race Mode: ON (R toggle)" if race.enabled else "Race Mode: OFF (R toggle)",
+            "Race Mode: ON (R)" if race.enabled else "Race Mode: OFF (R)",
+            "Switch mode: TAB / F1-F4",
         ]
 
         if mode == "local":
             hud_lines.append(f"P2 Speed: {int(player2.speed * 0.15):03d} km/h  Lap: {player2.lap}/{RACE_LAPS if race.enabled else '-'}")
-            hud_lines.append("P2: I/K accel-brake, J/L steer")
+            hud_lines.append("P2: I/J/K/L")
 
         if mode in {"online-host", "online-join"}:
             hud_lines.append(f"Network: {'connected' if net.connected else 'waiting'} ({host}:{port})")
@@ -451,22 +538,27 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             hud_lines.append("CRASH! Wall hit -> speed reduced")
 
         for i, line in enumerate(hud_lines):
-            screen.blit(font.render(line, True, (255, 255, 255)), (14, 14 + i * 21))
+            screen.blit(font.render(line, True, (255, 255, 255)), (12, 10 + i * 20))
 
         if race.enabled and not race.finished and now < race.countdown_end:
             countdown = max(1, int(math.ceil(race.countdown_end - now)))
             label = big_font.render(str(countdown), True, (255, 230, 80))
-            screen.blit(label, (SCREEN_WIDTH // 2 - label.get_width() // 2, 80))
+            screen.blit(label, (SCREEN_WIDTH // 2 - label.get_width() // 2, 70))
         elif race.enabled and race.finished:
-            text = big_font.render(f"{race.winner} Wins! Press R", True, (255, 230, 80))
-            screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 80))
+            text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
+            screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: WASD/Arrows", True, (255, 255, 255)), (14, SCREEN_HEIGHT - 28))
+        screen.blit(font.render("P1: WASD/Arrows", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 
     net.close()
     pygame.quit()
     sys.exit(0)
+
+
+def cycle_perf(current: str) -> str:
+    idx = PERF_ORDER.index(current)
+    return PERF_ORDER[(idx + 1) % len(PERF_ORDER)]
 
 
 def parse_args() -> argparse.Namespace:
@@ -475,7 +567,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1", help="Host IP for online modes")
     parser.add_argument("--port", type=int, default=50555, help="UDP port for online modes")
     parser.add_argument("--race", action="store_true", help="Start with race mode enabled")
-    parser.add_argument("--performance", choices=["auto", "low", "normal"], default="auto", help="Rendering profile for slower laptops")
+    parser.add_argument(
+        "--performance",
+        choices=["auto", "ultra-low", "low", "normal"],
+        default="auto",
+        help="Rendering profile (use ultra-low for Pentium / older i3)",
+    )
     return parser.parse_args()
 
 

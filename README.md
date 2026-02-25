@@ -4,14 +4,15 @@ A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a U
 
 ## Features
 - Pseudo-3D retro road rendering (classic sim illusion).
-- Track with **strong turns**, elevation changes, and visible **wall barriers**.
+- Track with strong turns, elevation changes, and visible wall barriers.
 - Crash physics on wall impact (bounce + speed penalty + recovery timer).
-- **Race mode** with 3-lap win condition and start countdown.
+- Race mode with 3-lap win condition and start countdown.
 - Multiplayer:
   - Single player
   - Local multiplayer (2 players on one keyboard)
   - Online multiplayer (simple UDP host/join)
 - Fast mode switching in-game (TAB / F1-F4) without restarting.
+- Performance profiles designed for low-power systems (Latitude 3120 / Pentium / older i3).
 - Windows `.exe` build script in Python (`build_exe.py`).
 
 ## Quick start
@@ -25,19 +26,20 @@ python main.py --performance auto
 
 ## Controls
 ### Player 1
-- **Accelerate:** `W` or `Up`
-- **Brake:** `S` or `Down`
-- **Steer:** `A/D` or `Left/Right`
+- Accelerate: `W` or `Up`
+- Brake: `S` or `Down`
+- Steer: `A/D` or `Left/Right`
 
 ### Player 2 (local mode)
-- **Accelerate:** `I`
-- **Brake:** `K`
-- **Steer:** `J/L`
+- Accelerate: `I`
+- Brake: `K`
+- Steer: `J/L`
 
 ### Global
-- **TAB:** cycle mode (single → local → online host → online join)
-- **F1/F2/F3/F4:** jump directly to mode
-- **R:** toggle/restart race mode
+- `TAB`: cycle mode (single → local → online host → online join)
+- `F1/F2/F3/F4`: jump directly to mode
+- `R`: toggle/restart race mode
+- `F8`: cycle performance preset while running
 
 ## Game modes
 ```bash
@@ -55,12 +57,22 @@ python main.py --mode online-join --host <HOST_IP> --port 50555
 
 # Start with race mode enabled immediately
 python main.py --mode single --race
-
-# Force low-spec profile (best for older i3 laptops)
-python main.py --performance low
 ```
 
-> For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
+## Recommended for Latitude 3120 / Pentium / i3 10th gen
+```bash
+# Best first try for low-end CPUs
+python main.py --performance ultra-low
+
+# Auto picks based on CPU (Pentium/Celeron => ultra-low)
+python main.py --performance auto
+```
+
+## Responsiveness fixes included
+- Software SDL render driver default to avoid some Intel iGPU black-screen/driver issues.
+- Very low default workload in `ultra-low` profile (640x360, shorter draw distance, reduced effects).
+- Runtime adaptive downgrade if frame-time stays too high.
+- Frame delta clamp to avoid long-frame simulation stalls.
 
 ## Build Windows EXE
 On Windows, run:
@@ -73,16 +85,9 @@ Output:
 - `dist\ThumbDriveRacer.exe`
 
 ## Python version note
-- For **Python 3.12 and older**, this project installs `pygame`.
-- For **Python 3.13+**, this project installs `pygame-ce` (compatible `import pygame`).
+- For Python 3.12 and older, this project installs `pygame`.
+- For Python 3.13+, this project installs `pygame-ce` (compatible `import pygame`).
 - The build script uses wheel-only dependency installs to avoid source-build failures.
 
-## Latitude 3120 performance tips
-- Keep laptop on AC power + High Performance mode.
-- If FPS is low, reduce `DRAW_DISTANCE` in `main.py` from `220` to ~`150`.
-
-
-## Responsiveness on older laptops
-- Default `--performance auto` now auto-selects lighter settings on low-core CPUs.
-- If the game still feels slow/unresponsive, run with `--performance low`.
-- `low` uses lower resolution, fewer projected segments, fewer cloud layers, and a lower FPS cap.
+## Online note
+For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
