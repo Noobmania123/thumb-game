@@ -8,7 +8,7 @@ It is designed to be simple enough to run from a USB thumb drive and can be pack
 - Curved roads and rolling hills.
 - Keyboard controls (WASD / Arrow keys).
 - Simple car + speed HUD.
-- Windows `.exe` build script.
+- Windows `.exe` build script (Python).
 
 ## Quick start
 
@@ -27,8 +27,8 @@ python main.py
 ## Build Windows EXE
 On Windows, run:
 
-```bat
-build_exe.bat
+```bash
+python build_exe.py
 ```
 
 Output:
