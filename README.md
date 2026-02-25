@@ -4,12 +4,14 @@ A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a U
 
 ## Features
 - Pseudo-3D retro road rendering (classic sim illusion).
-- Real racetrack boundaries with **visible barriers/walls**.
-- **Crash physics** on wall impact (bounce + speed penalty + short recovery).
+- Track with **strong turns**, elevation changes, and visible **wall barriers**.
+- Crash physics on wall impact (bounce + speed penalty + recovery timer).
+- **Race mode** with 3-lap win condition and start countdown.
 - Multiplayer:
-  - **Single player**
-  - **Local multiplayer** (2 players on one keyboard)
-  - **Online multiplayer** (simple UDP host/join)
+  - Single player
+  - Local multiplayer (2 players on one keyboard)
+  - Online multiplayer (simple UDP host/join)
+- Fast mode switching in-game (TAB / F1-F4) without restarting.
 - Windows `.exe` build script in Python (`build_exe.py`).
 
 ## Quick start
@@ -32,19 +34,27 @@ python main.py
 - **Brake:** `K`
 - **Steer:** `J/L`
 
+### Global
+- **TAB:** cycle mode (single → local → online host → online join)
+- **F1/F2/F3/F4:** jump directly to mode
+- **R:** toggle/restart race mode
+
 ## Game modes
 ```bash
-# Single player
+# Start in single-player free drive
 python main.py --mode single
 
-# Local multiplayer (same keyboard)
+# Start in local multiplayer
 python main.py --mode local
 
-# Online host (machine A)
+# Start as online host
 python main.py --mode online-host --port 50555
 
-# Online join (machine B)
+# Start as online client
 python main.py --mode online-join --host <HOST_IP> --port 50555
+
+# Start with race mode enabled immediately
+python main.py --mode single --race
 ```
 
 > For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
