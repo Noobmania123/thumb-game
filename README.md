@@ -1,14 +1,16 @@
 # Thumb Drive Racer (Pygame)
 
-A lightweight pseudo-3D **2D racing game** made in Python + Pygame.
-It is designed to be simple enough to run from a USB thumb drive and can be packaged as a standalone `.exe`.
+A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a USB drive and package to a standalone Windows `.exe`.
 
 ## Features
-- Pseudo-3D "classic sim" road rendering (old-school style illusion).
-- Curved roads and rolling hills.
-- Keyboard controls (WASD / Arrow keys).
-- Simple car + speed HUD.
-- Windows `.exe` build script (Python).
+- Pseudo-3D retro road rendering (classic sim illusion).
+- Real racetrack boundaries with **visible barriers/walls**.
+- **Crash physics** on wall impact (bounce + speed penalty + short recovery).
+- Multiplayer:
+  - **Single player**
+  - **Local multiplayer** (2 players on one keyboard)
+  - **Online multiplayer** (simple UDP host/join)
+- Windows `.exe` build script in Python (`build_exe.py`).
 
 ## Quick start
 
@@ -20,9 +22,32 @@ python main.py
 ```
 
 ## Controls
-- **Accelerate:** `W` / `Up`
-- **Brake:** `S` / `Down`
-- **Steer left/right:** `A` `D` / `Left` `Right`
+### Player 1
+- **Accelerate:** `W` or `Up`
+- **Brake:** `S` or `Down`
+- **Steer:** `A/D` or `Left/Right`
+
+### Player 2 (local mode)
+- **Accelerate:** `I`
+- **Brake:** `K`
+- **Steer:** `J/L`
+
+## Game modes
+```bash
+# Single player
+python main.py --mode single
+
+# Local multiplayer (same keyboard)
+python main.py --mode local
+
+# Online host (machine A)
+python main.py --mode online-host --port 50555
+
+# Online join (machine B)
+python main.py --mode online-join --host <HOST_IP> --port 50555
+```
+
+> For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
 
 ## Build Windows EXE
 On Windows, run:
@@ -34,14 +59,11 @@ python build_exe.py
 Output:
 - `dist\ThumbDriveRacer.exe`
 
-Then copy that EXE (and optionally a `README.txt`) to your USB drive.
-
-## Latitude 3120 notes
-- Use `--onefile` build (already set) for easiest USB deployment.
-- If performance is low, reduce `DRAW_DISTANCE` in `main.py` from `220` to around `150`.
-- Keep the laptop on AC power and use High Performance power mode for smoother FPS.
-
-### Python version note
+## Python version note
 - For **Python 3.12 and older**, this project installs `pygame`.
 - For **Python 3.13+**, this project installs `pygame-ce` (compatible `import pygame`).
-- The build script uses wheel-only dependency installs to avoid source-build failures on Windows.
+- The build script uses wheel-only dependency installs to avoid source-build failures.
+
+## Latitude 3120 performance tips
+- Keep laptop on AC power + High Performance mode.
+- If FPS is low, reduce `DRAW_DISTANCE` in `main.py` from `220` to ~`150`.
