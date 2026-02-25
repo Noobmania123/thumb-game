@@ -40,3 +40,8 @@ Then copy that EXE (and optionally a `README.txt`) to your USB drive.
 - Use `--onefile` build (already set) for easiest USB deployment.
 - If performance is low, reduce `DRAW_DISTANCE` in `main.py` from `220` to around `150`.
 - Keep the laptop on AC power and use High Performance power mode for smoother FPS.
+
+### Python version note
+- For **Python 3.12 and older**, this project installs `pygame`.
+- For **Python 3.13+**, this project installs `pygame-ce` (compatible `import pygame`).
+- The build script uses wheel-only dependency installs to avoid source-build failures on Windows.
