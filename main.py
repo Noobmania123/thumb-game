@@ -26,6 +26,7 @@ WALL_LIMIT = 0.95
 WALL_BOUNCE = 0.45
 CRASH_COOLDOWN = 0.9
 EXPLOSION_SPEED_THRESHOLD = 0.62  # percentage of MAX_SPEED
+MAX_DISPLAY_KMH = 300
 
 MODE_ORDER = ["single", "local", "online-host", "online-join"]
 PERF_ORDER = ["ultra-low", "low", "normal"]
@@ -40,6 +41,7 @@ MAX_SPEED = 0.0
 ACCEL = 0.0
 BRAKING = 0.0
 DECEL = 0.0
+KMH_FACTOR = 0.0
 
 
 @dataclass
@@ -60,6 +62,7 @@ class PlayerState:
     car_color: tuple[int, int, int] = (230, 40, 50)
     out_of_action: bool = False
     exploded: bool = False
+    heading: float = 0.0
 
 
 @dataclass
@@ -133,11 +136,12 @@ class NetSession:
 
 
 def recalc_physics() -> None:
-    global MAX_SPEED, ACCEL, BRAKING, DECEL
+    global MAX_SPEED, ACCEL, BRAKING, DECEL, KMH_FACTOR
     MAX_SPEED = SEGMENT_LENGTH / (1 / FPS) * 0.9
     ACCEL = MAX_SPEED / 5.8
     BRAKING = -MAX_SPEED / 3.0
     DECEL = -MAX_SPEED / 8.5
+    KMH_FACTOR = MAX_DISPLAY_KMH / max(1.0, MAX_SPEED)
 
 
 def pick_auto_profile() -> str:
@@ -322,9 +326,10 @@ def draw_segment(surface: pygame.Surface, x1: float, y1: float, w1: float, x2: f
 
 
 def draw_player_car(surface: pygame.Surface, player: PlayerState, speed_percent: float, crashed: bool, x_offset: int = 0) -> None:
-    base_y = SCREEN_HEIGHT - 70
-    center_x = SCREEN_WIDTH // 2 + int(player.x * SCREEN_WIDTH * 0.35) + x_offset
-    bob = int(math.sin(pygame.time.get_ticks() * 0.02) * (2 + speed_percent * 5))
+    base_y = SCREEN_HEIGHT - 72
+    cx = SCREEN_WIDTH // 2 + int(player.x * SCREEN_WIDTH * 0.35) + x_offset
+    cy = base_y + int(math.sin(pygame.time.get_ticks() * 0.02) * (2 + speed_percent * 5))
+
     if player.exploded:
         color = (255, 110, 20)
     elif crashed:
@@ -332,10 +337,24 @@ def draw_player_car(surface: pygame.Surface, player: PlayerState, speed_percent:
     else:
         color = player.car_color
 
-    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x - 35, base_y + 6 + bob, 10, 14))
-    pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x + 25, base_y + 6 + bob, 10, 14))
-    pygame.draw.rect(surface, color, pygame.Rect(center_x - 30, base_y - 18 + bob, 60, 30), border_radius=5)
-    pygame.draw.rect(surface, (200, 225, 245), pygame.Rect(center_x - 17, base_y - 32 + bob, 34, 14), border_radius=4)
+    # F1-like silhouette in local coordinates
+    body = [(-10, 20), (-18, 4), (-16, -12), (-8, -22), (0, -30), (8, -22), (16, -12), (18, 4), (10, 20)]
+    wing_front = [(-20, -20), (20, -20), (14, -14), (-14, -14)]
+    wing_rear = [(-24, 18), (24, 18), (20, 24), (-20, 24)]
+    cockpit = [(-6, -12), (6, -12), (4, 2), (-4, 2)]
+
+    ang = -player.heading
+    def transform(points):
+        out=[]
+        for x,y in points:
+            v=pygame.Vector2(x,y).rotate(ang)
+            out.append((cx+v.x, cy+v.y))
+        return out
+
+    pygame.draw.polygon(surface, (30, 30, 30), transform(wing_rear))
+    pygame.draw.polygon(surface, (30, 30, 30), transform(wing_front))
+    pygame.draw.polygon(surface, color, transform(body))
+    pygame.draw.polygon(surface, (180, 220, 245), transform(cockpit))
 
 
 def draw_remote_marker(surface: pygame.Surface, rel_z: float, rel_x: float, color: tuple[int, int, int]) -> None:
@@ -401,10 +420,16 @@ def update_player(
         accel = min(accel, DECEL)
 
     speed_factor = player.speed / max(1.0, MAX_SPEED)
+    rot_speed = 130 * dt * (0.35 + speed_factor)
     if steer_left:
-        player.x -= 2.3 * dt * (speed_factor + 0.3)
+        player.heading -= rot_speed
     if steer_right:
-        player.x += 2.3 * dt * (speed_factor + 0.3)
+        player.heading += rot_speed
+
+    # steering wheel returns gradually to center
+    player.heading *= 0.92
+    player.heading = max(-38.0, min(38.0, player.heading))
+    player.x += math.sin(math.radians(player.heading)) * dt * (1.9 + 2.5 * speed_factor)
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
     crash_event = handle_crash(player, now)
@@ -630,13 +655,13 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
 
         hud_lines = [
             f"Mode: {mode_label(mode)} | Perf: {profile} (F8 cycle)",
-            f"P1 Speed: {int(player1.speed * 0.15):03d} km/h  Lap: {player1.lap}/{RACE_LAPS if race.enabled else '-'}",
+            f"P1 Speed: {int(player1.speed * KMH_FACTOR):03d} km/h  Lap: {player1.lap}/{RACE_LAPS if race.enabled else '-'}",
             "Race Mode: ON (T)" if race.enabled else "Race Mode: OFF (T)",
             "Switch mode: TAB / F1-F4",
         ]
 
         if mode == "local":
-            hud_lines.append(f"P2 Speed: {int(player2.speed * 0.15):03d} km/h  Lap: {player2.lap}/{RACE_LAPS if race.enabled else '-'}")
+            hud_lines.append(f"P2 Speed: {int(player2.speed * KMH_FACTOR):03d} km/h  Lap: {player2.lap}/{RACE_LAPS if race.enabled else '-'}")
             hud_lines.append("P2: I/J/K/L")
 
         if mode in {"online-host", "online-join"}:
@@ -661,7 +686,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
             screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: WASD/Arrows | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
+        screen.blit(font.render("P1: W/S accel-brake, A/D rotate | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 
     net.close()
