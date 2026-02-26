@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 # Prefer software rendering on older/low-power GPUs to avoid black-screen GPU driver issues.
 os.environ.setdefault("SDL_RENDER_DRIVER", "software")
@@ -182,7 +183,7 @@ def adapt_performance(current_profile: str, smoothed_dt: float) -> str:
     return apply_performance_profile(next_profile)
 
 
-def build_track() -> list[Segment]:
+def build_track(progress_cb: Callable[[float], None] | None = None) -> list[Segment]:
     """Build exactly TRACK_LENGTH segments quickly.
 
     Note: cursor must advance monotonically (no modulo wrap) to avoid infinite
@@ -220,6 +221,8 @@ def build_track() -> list[Segment]:
                 break
             real_len = min(length, TRACK_LENGTH - cursor)
             cursor = add_section(cursor, real_len, curve, hill)
+            if progress_cb:
+                progress_cb(cursor / TRACK_LENGTH)
 
     return track
 
@@ -415,13 +418,35 @@ def check_race_finish(race: RaceState, p1: PlayerState, p2: PlayerState, mode: s
         race.winner = p2.name
 
 
-def show_loading_screen(screen: pygame.Surface, text: str) -> None:
+def show_loading_screen(screen: pygame.Surface, text: str, progress: float = 0.0) -> None:
+    progress = max(0.0, min(1.0, progress))
     screen.fill((20, 20, 30))
     font = pygame.font.SysFont("consolas", 22)
-    label = font.render(text, True, (230, 230, 230))
-    screen.blit(label, (screen.get_width() // 2 - label.get_width() // 2, screen.get_height() // 2 - label.get_height() // 2))
+    small = pygame.font.SysFont("consolas", 17)
+
+    title = font.render(text, True, (230, 230, 230))
+    pct = small.render(f"{int(progress * 100):3d}%", True, (230, 230, 230))
+
+    cx = screen.get_width() // 2
+    cy = screen.get_height() // 2
+    screen.blit(title, (cx - title.get_width() // 2, cy - 44))
+
+    bar_w = min(460, screen.get_width() - 80)
+    bar_h = 18
+    bar_x = cx - bar_w // 2
+    bar_y = cy
+    pygame.draw.rect(screen, (60, 60, 80), pygame.Rect(bar_x, bar_y, bar_w, bar_h), border_radius=6)
+    fill_w = max(2, int(bar_w * progress))
+    pygame.draw.rect(screen, (120, 210, 140), pygame.Rect(bar_x, bar_y, fill_w, bar_h), border_radius=6)
+    pygame.draw.rect(screen, (190, 190, 210), pygame.Rect(bar_x, bar_y, bar_w, bar_h), width=2, border_radius=6)
+
+    screen.blit(pct, (cx - pct.get_width() // 2, bar_y + 26))
     pygame.display.flip()
-    pygame.event.pump()
+
+    for event in pygame.event.get([pygame.QUIT]):
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            raise SystemExit(0)
 
 
 def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -> None:
@@ -432,8 +457,9 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
     pygame.display.set_caption("Thumb Drive Racer")
     clock = pygame.time.Clock()
 
-    show_loading_screen(screen, "Loading track...")
-    track = build_track()
+    show_loading_screen(screen, "Loading track...", 0.0)
+    track = build_track(progress_cb=lambda p: show_loading_screen(screen, "Loading track...", p))
+    show_loading_screen(screen, "Loading complete", 1.0)
 
     font = pygame.font.SysFont("consolas", 17)
     big_font = pygame.font.SysFont("consolas", 32, bold=True)
