@@ -460,16 +460,19 @@ def update_player(
         accel = min(accel, DECEL)
 
     speed_factor = player.speed / max(1.0, MAX_SPEED)
-    rot_speed = 130 * dt * (0.35 + speed_factor)
+    rot_speed = 190 * dt * (0.35 + speed_factor)
     if steer_left:
         player.heading -= rot_speed
     if steer_right:
         player.heading += rot_speed
 
-    # steering wheel returns gradually to center
-    player.heading *= 0.92
-    player.heading = max(-38.0, min(38.0, player.heading))
-    player.x += math.sin(math.radians(player.heading)) * dt * (1.9 + 2.5 * speed_factor)
+    # steering returns to center more slowly for visible rotation
+    player.heading *= 0.965
+    player.heading = max(-45.0, min(45.0, player.heading))
+
+    # lateral movement comes from heading; this feels like turning instead of sliding
+    turn_lateral = math.sin(math.radians(player.heading)) * dt * (0.9 + 1.6 * speed_factor)
+    player.x += turn_lateral
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
     crash_event = handle_crash(player, now)
@@ -520,7 +523,7 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
         dark = (idx_seg // 3) % 2 == 0
         road_col = (58, 58, 58) if dark else (68, 68, 68)
         rumble_col = (220, 50, 50) if dark else (245, 245, 245)
-        wall_col = (165, 165, 180)
+        wall_col = (210, 210, 225)
 
         road_quad = [
             (x0 - road_half, y0, z0),
@@ -537,22 +540,33 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
         quads.append((z0 + 0.1, rumble_col, left_rumble))
         quads.append((z0 + 0.1, rumble_col, right_rumble))
 
-        wh = 240
-        left_wall = [(x0 - road_half * 1.02, y0, z0), (x0 - road_half * 1.02, y0 - wh, z0), (x1 - road_half * 1.02, y1 - wh, z1), (x1 - road_half * 1.02, y1, z1)]
-        right_wall = [(x0 + road_half * 1.02, y0, z0), (x0 + road_half * 1.02, y0 - wh, z0), (x1 + road_half * 1.02, y1 - wh, z1), (x1 + road_half * 1.02, y1, z1)]
+        wh = 320
+        left_wall = [(x0 - road_half * 1.04, y0, z0), (x0 - road_half * 1.04, y0 - wh, z0), (x1 - road_half * 1.04, y1 - wh, z1), (x1 - road_half * 1.04, y1, z1)]
+        right_wall = [(x0 + road_half * 1.04, y0, z0), (x0 + road_half * 1.04, y0 - wh, z0), (x1 + road_half * 1.04, y1 - wh, z1), (x1 + road_half * 1.04, y1, z1)]
+        # bright faces + dark caps make barriers pop
         quads.append((z0 + 0.2, wall_col, left_wall))
         quads.append((z0 + 0.2, wall_col, right_wall))
+        left_cap = [(x0 - road_half * 1.04, y0 - wh, z0), (x0 - road_half * 1.08, y0 - wh + 18, z0), (x1 - road_half * 1.08, y1 - wh + 18, z1), (x1 - road_half * 1.04, y1 - wh, z1)]
+        right_cap = [(x0 + road_half * 1.04, y0 - wh, z0), (x0 + road_half * 1.08, y0 - wh + 18, z0), (x1 + road_half * 1.08, y1 - wh + 18, z1), (x1 + road_half * 1.04, y1 - wh, z1)]
+        quads.append((z0 + 0.19, (120, 120, 135), left_cap))
+        quads.append((z0 + 0.19, (120, 120, 135), right_cap))
 
-        # scenery blocks (actual 3D prisms)
-        if n % 5 == 0:
-            s_off = road_half * 1.45
-            h = 380
-            w = 140
-            # left tree block face
-            left_face = [(x0 - s_off - w, y0, z0), (x0 - s_off - w, y0 - h, z0), (x1 - s_off - w, y1 - h, z1), (x1 - s_off - w, y1, z1)]
-            right_face = [(x0 + s_off + w, y0, z0), (x0 + s_off + w, y0 - h, z0), (x1 + s_off + w, y1 - h, z1), (x1 + s_off + w, y1, z1)]
-            quads.append((z0 + 0.3, (42, 120, 46), left_face))
-            quads.append((z0 + 0.3, (42, 120, 46), right_face))
+        # scenery: tree trunks + foliage billboards
+        if n % 4 == 0:
+            s_off = road_half * 1.55
+            trunk_h = 180
+            trunk_w = 34
+            crown_h = 320
+            crown_w = 130
+
+            left_trunk = [(x0 - s_off - trunk_w, y0, z0), (x0 - s_off - trunk_w, y0 - trunk_h, z0), (x1 - s_off - trunk_w, y1 - trunk_h, z1), (x1 - s_off - trunk_w, y1, z1)]
+            right_trunk = [(x0 + s_off + trunk_w, y0, z0), (x0 + s_off + trunk_w, y0 - trunk_h, z0), (x1 + s_off + trunk_w, y1 - trunk_h, z1), (x1 + s_off + trunk_w, y1, z1)]
+            left_crown = [(x0 - s_off - crown_w, y0 - trunk_h + 30, z0), (x0 - s_off - crown_w, y0 - crown_h, z0), (x1 - s_off - crown_w, y1 - crown_h, z1), (x1 - s_off - crown_w, y1 - trunk_h + 30, z1)]
+            right_crown = [(x0 + s_off + crown_w, y0 - trunk_h + 30, z0), (x0 + s_off + crown_w, y0 - crown_h, z0), (x1 + s_off + crown_w, y1 - crown_h, z1), (x1 + s_off + crown_w, y1 - trunk_h + 30, z1)]
+            quads.append((z0 + 0.31, (92, 58, 34), left_trunk))
+            quads.append((z0 + 0.31, (92, 58, 34), right_trunk))
+            quads.append((z0 + 0.30, (34, 126, 42), left_crown))
+            quads.append((z0 + 0.30, (34, 126, 42), right_crown))
 
     quads.sort(key=lambda t: t[0], reverse=True)
     for _, color, poly in quads:
@@ -786,7 +800,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
             screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: W/S accel-brake, A/D rotate | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
+        screen.blit(font.render("P1: W/S accel-brake, A/D or Left/Right rotate | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 
     net.close()

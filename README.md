@@ -3,8 +3,9 @@
 A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a USB drive and package to a standalone Windows `.exe`.
 
 ## Features
+- Barriers and trees are rendered as actual projected 3D geometry so they remain visible.
 - Actual 3D-style road/world rendering using camera-space polygon projection (in Pygame).
-- Track with strong turns, elevation changes, visible wall barriers, and roadside scenery.
+- Track with strong turns, elevation changes, **high-visibility barrier walls**, and dense roadside trees.
 - Crash physics on wall impact with speed-based outcomes (stall or explosion).
 - Race mode with 3-lap win condition and start countdown.
 - Speed display is capped/tuned to top out at **300 km/h**.
@@ -29,7 +30,7 @@ python main.py --performance auto
 ### Player 1
 - Accelerate: `W` or `Up`
 - Brake: `S` or `Down`
-- Rotate: `A/D`
+- Rotate: `A/D` or `Left/Right`
 
 ### Player 2 (local mode)
 - Accelerate: `I`
