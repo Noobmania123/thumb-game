@@ -183,16 +183,21 @@ def adapt_performance(current_profile: str, smoothed_dt: float) -> str:
 
 
 def build_track() -> list[Segment]:
+    """Build exactly TRACK_LENGTH segments quickly.
+
+    Note: cursor must advance monotonically (no modulo wrap) to avoid infinite
+    loading loops on slower machines.
+    """
     track: list[Segment] = [Segment(i) for i in range(TRACK_LENGTH)]
 
     def add_section(start: int, length: int, curve: float, hill: float) -> int:
         for i in range(length):
-            idx = (start + i) % TRACK_LENGTH
+            idx = start + i
             p = i / max(1, length - 1)
             smooth = (1 - math.cos(p * math.pi)) / 2
             track[idx].curve = curve * smooth
             track[idx].y = hill * smooth
-        return (start + length) % TRACK_LENGTH
+        return start + length
 
     cursor = 0
     pattern = [
@@ -213,7 +218,8 @@ def build_track() -> list[Segment]:
         for length, curve, hill in pattern:
             if cursor >= TRACK_LENGTH:
                 break
-            cursor = add_section(cursor, min(length, TRACK_LENGTH - cursor), curve, hill)
+            real_len = min(length, TRACK_LENGTH - cursor)
+            cursor = add_section(cursor, real_len, curve, hill)
 
     return track
 
