@@ -71,6 +71,10 @@ python main.py --performance ultra-low
 python main.py --performance auto
 ```
 
+## Handling fixes included
+- Added steering assist / curve compensation so A/D turning does not shove the car into barriers on bends.
+- Reduced lateral drift and tuned heading recenter for more controllable rotation steering.
+
 ## Responsiveness fixes included
 - Software SDL render driver default to avoid some Intel iGPU black-screen/driver issues.
 - Very low default workload in `ultra-low` profile (640x360, shorter draw distance, reduced effects).

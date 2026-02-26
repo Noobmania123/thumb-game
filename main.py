@@ -63,6 +63,7 @@ class PlayerState:
     out_of_action: bool = False
     exploded: bool = False
     heading: float = 0.0
+    x_velocity: float = 0.0
 
 
 @dataclass
@@ -429,6 +430,7 @@ def handle_crash(player: PlayerState, now: float) -> str | None:
         return "explode"
 
     player.speed = 0.0
+    player.x_velocity = 0.0
     player.out_of_action = True
     player.exploded = False
     player.crashed_until = now + CRASH_COOLDOWN
@@ -444,9 +446,11 @@ def update_player(
     brake: bool,
     now: float,
     can_drive: bool,
- ) -> str | None:
+    road_curve: float,
+) -> str | None:
     if player.out_of_action:
         player.speed = 0.0
+        player.x_velocity = 0.0
         return None
 
     accel = DECEL
@@ -460,19 +464,23 @@ def update_player(
         accel = min(accel, DECEL)
 
     speed_factor = player.speed / max(1.0, MAX_SPEED)
-    rot_speed = 190 * dt * (0.35 + speed_factor)
+    rot_speed = 135 * dt * (0.25 + speed_factor)
     if steer_left:
         player.heading -= rot_speed
     if steer_right:
         player.heading += rot_speed
 
-    # steering returns to center more slowly for visible rotation
-    player.heading *= 0.965
-    player.heading = max(-45.0, min(45.0, player.heading))
+    # steering returns to center for stability
+    player.heading *= 0.90
+    player.heading = max(-32.0, min(32.0, player.heading))
 
-    # lateral movement comes from heading; this feels like turning instead of sliding
-    turn_lateral = math.sin(math.radians(player.heading)) * dt * (0.9 + 1.6 * speed_factor)
-    player.x += turn_lateral
+    # heading contributes to lateral acceleration, filtered by grip/friction
+    turn_accel = math.sin(math.radians(player.heading)) * (0.85 + 1.0 * speed_factor)
+    # compensate road camber/curve so inputs don't instantly throw car outward on bends
+    curve_assist = -road_curve * (0.7 + 1.1 * speed_factor)
+    player.x_velocity += (turn_accel + curve_assist) * dt
+    player.x_velocity *= 0.88
+    player.x += player.x_velocity * dt
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
     crash_event = handle_crash(player, now)
@@ -723,6 +731,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
         race_started = not race.enabled or now >= race.countdown_end
         can_drive = race_started and not race.finished
 
+        seg1 = track[int(player1.position // SEGMENT_LENGTH) % TRACK_LENGTH]
         crash1_event = update_player(
             player1,
             dt,
@@ -732,10 +741,12 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             brake=keys[pygame.K_s] or keys[pygame.K_DOWN],
             now=now,
             can_drive=can_drive,
+            road_curve=seg1.curve,
         )
 
         crash2_event: str | None = None
         if mode == "local":
+            seg2 = track[int(player2.position // SEGMENT_LENGTH) % TRACK_LENGTH]
             crash2_event = update_player(
                 player2,
                 dt,
@@ -745,6 +756,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
                 brake=keys[pygame.K_k],
                 now=now,
                 can_drive=can_drive,
+                road_curve=seg2.curve,
             )
         elif mode in {"online-host", "online-join"}:
             net.tick({"position": player1.position, "speed": player1.speed, "x": player1.x, "lap": float(player1.lap)})
@@ -800,7 +812,8 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
             screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: W/S accel-brake, A/D or Left/Right rotate | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
+        screen.blit(font.render("P1: W/S accel-brake, A/D or Left/Right rotate | steering assist enabled", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 44))
+        screen.blit(font.render("R restart | T race toggle | F8 perf", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 
     net.close()
