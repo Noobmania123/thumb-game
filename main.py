@@ -67,6 +67,12 @@ class RaceState:
     winner: str = ""
 
 
+@dataclass
+class LoadingUI:
+    font_title: pygame.font.Font
+    font_small: pygame.font.Font
+    last_percent: int = -1
+
 class NetSession:
     def __init__(self, mode: str, host: str, port: int) -> None:
         self.mode = mode
@@ -418,14 +424,17 @@ def check_race_finish(race: RaceState, p1: PlayerState, p2: PlayerState, mode: s
         race.winner = p2.name
 
 
-def show_loading_screen(screen: pygame.Surface, text: str, progress: float = 0.0) -> None:
+def show_loading_screen(screen: pygame.Surface, ui: LoadingUI, text: str, progress: float = 0.0, force: bool = False) -> None:
     progress = max(0.0, min(1.0, progress))
-    screen.fill((20, 20, 30))
-    font = pygame.font.SysFont("consolas", 22)
-    small = pygame.font.SysFont("consolas", 17)
+    percent = int(progress * 100)
+    if not force and percent == ui.last_percent:
+        return
+    ui.last_percent = percent
 
-    title = font.render(text, True, (230, 230, 230))
-    pct = small.render(f"{int(progress * 100):3d}%", True, (230, 230, 230))
+    screen.fill((20, 20, 30))
+
+    title = ui.font_title.render(text, True, (230, 230, 230))
+    pct = ui.font_small.render(f"{percent:3d}%", True, (230, 230, 230))
 
     cx = screen.get_width() // 2
     cy = screen.get_height() // 2
@@ -453,13 +462,17 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
     profile = apply_performance_profile(performance)
 
     pygame.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.RESIZABLE)
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Thumb Drive Racer")
     clock = pygame.time.Clock()
 
-    show_loading_screen(screen, "Loading track...", 0.0)
-    track = build_track(progress_cb=lambda p: show_loading_screen(screen, "Loading track...", p))
-    show_loading_screen(screen, "Loading complete", 1.0)
+    loading_ui = LoadingUI(
+        font_title=pygame.font.SysFont("consolas", 22),
+        font_small=pygame.font.SysFont("consolas", 17),
+    )
+    show_loading_screen(screen, loading_ui, "Loading track...", 0.0, force=True)
+    track = build_track(progress_cb=lambda p: show_loading_screen(screen, loading_ui, "Loading track...", p))
+    show_loading_screen(screen, loading_ui, "Loading complete", 1.0, force=True)
 
     font = pygame.font.SysFont("consolas", 17)
     big_font = pygame.font.SysFont("consolas", 32, bold=True)
@@ -610,4 +623,8 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.mode, args.host, args.port, args.race, args.performance)
+    try:
+        run(args.mode, args.host, args.port, args.race, args.performance)
+    except Exception as exc:
+        print(f"Fatal error: {exc}")
+        raise

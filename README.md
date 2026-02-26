@@ -91,3 +91,10 @@ Output:
 
 ## Online note
 For online play across devices, allow UDP port `50555` (or your chosen port) in firewall settings.
+
+
+## If you still see black screen / not responding
+- Run with: `python main.py --performance ultra-low`
+- Wait for the loading bar to reach 100%; it now updates in steps.
+- The game now reuses loading fonts and updates only on percent changes to avoid startup stalls.
+- If packaged as EXE, run it from a terminal once to capture any fatal error output.
