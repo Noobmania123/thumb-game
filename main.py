@@ -464,22 +464,30 @@ def update_player(
         accel = min(accel, DECEL)
 
     speed_factor = player.speed / max(1.0, MAX_SPEED)
-    rot_speed = 135 * dt * (0.25 + speed_factor)
-    if steer_left:
-        player.heading -= rot_speed
-    if steer_right:
-        player.heading += rot_speed
+    rot_speed = 120 * dt * (0.25 + speed_factor)
 
-    # steering returns to center for stability
-    player.heading *= 0.90
-    player.heading = max(-32.0, min(32.0, player.heading))
+    steer_input = 0.0
+    if steer_left and not steer_right:
+        steer_input = -1.0
+    elif steer_right and not steer_left:
+        steer_input = 1.0
 
-    # heading contributes to lateral acceleration, filtered by grip/friction
-    turn_accel = math.sin(math.radians(player.heading)) * (0.85 + 1.0 * speed_factor)
-    # compensate road camber/curve so inputs don't instantly throw car outward on bends
-    curve_assist = -road_curve * (0.7 + 1.1 * speed_factor)
-    player.x_velocity += (turn_accel + curve_assist) * dt
-    player.x_velocity *= 0.88
+    player.heading += steer_input * rot_speed
+
+    # steering returns toward center for stability
+    player.heading *= 0.93
+    player.heading = max(-30.0, min(30.0, player.heading))
+
+    # lateral model:
+    # - driver steering force (from heading)
+    # - mild curve-follow assist (same sign as curve direction)
+    # - center spring to avoid one-side drift into barriers
+    turn_force = math.sin(math.radians(player.heading)) * (0.70 + 0.95 * speed_factor)
+    curve_follow = road_curve * (0.22 + 0.55 * speed_factor)
+    center_pull = -player.x * 0.42
+
+    player.x_velocity += (turn_force + curve_follow + center_pull) * dt
+    player.x_velocity *= 0.84
     player.x += player.x_velocity * dt
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
@@ -812,7 +820,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
             screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: W/S accel-brake, A/D or Left/Right rotate | steering assist enabled", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 44))
+        screen.blit(font.render("P1: W/S accel-brake, A/D or Left/Right rotate | stability steering assist enabled", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 44))
         screen.blit(font.render("R restart | T race toggle | F8 perf", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 

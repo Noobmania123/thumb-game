@@ -73,6 +73,7 @@ python main.py --performance auto
 
 ## Handling fixes included
 - Added steering assist / curve compensation so A/D turning does not shove the car into barriers on bends.
+- Added center-stabilized steering model (turn force + curve follow + center pull) so turn direction matches input and corners are controllable.
 - Reduced lateral drift and tuned heading recenter for more controllable rotation steering.
 
 ## Responsiveness fixes included
