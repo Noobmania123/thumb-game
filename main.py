@@ -375,6 +375,46 @@ def wrap_distance(a: float, b: float) -> float:
     return d
 
 
+def to_camera_space(wx: float, wy: float, wz: float, cam_x: float, cam_y: float, cam_z: float, cam_yaw_deg: float) -> tuple[float, float, float]:
+    dx = wx - cam_x
+    dy = wy - cam_y
+    dz = wz - cam_z
+    yaw = math.radians(cam_yaw_deg)
+    cos_y = math.cos(yaw)
+    sin_y = math.sin(yaw)
+    cx = dx * cos_y - dz * sin_y
+    cz = dx * sin_y + dz * cos_y
+    return cx, dy, cz
+
+
+def project_camera_point(cx: float, cy: float, cz: float) -> tuple[float, float] | None:
+    if cz <= 8:
+        return None
+    scale = CAMERA_DEPTH / cz
+    sx = (1 + scale * cx) * SCREEN_WIDTH / 2
+    sy = (1 - scale * cy) * SCREEN_HEIGHT / 2
+    return sx, sy
+
+
+def draw_quad_3d(
+    surface: pygame.Surface,
+    points: list[tuple[float, float, float]],
+    color: tuple[int, int, int],
+    cam_x: float,
+    cam_y: float,
+    cam_z: float,
+    cam_yaw: float,
+) -> None:
+    projected: list[tuple[float, float]] = []
+    for wx, wy, wz in points:
+        cx, cy, cz = to_camera_space(wx, wy, wz, cam_x, cam_y, cam_z, cam_yaw)
+        p = project_camera_point(cx, cy, cz)
+        if p is None:
+            return
+        projected.append(p)
+    pygame.draw.polygon(surface, color, projected)
+
+
 def handle_crash(player: PlayerState, now: float) -> str | None:
     if abs(player.x) <= WALL_LIMIT or player.out_of_action:
         return None
@@ -444,34 +484,94 @@ def update_player(
 
 
 def render_world(surface: pygame.Surface, track: list[Segment], camera_player: PlayerState, remote_player: PlayerState | None) -> None:
+    """True 3D-ish world renderer using camera-space transforms + polygon projection."""
     draw_background(surface, camera_player.speed / max(1.0, MAX_SPEED))
 
+    cam_x = camera_player.x * ROAD_WIDTH
+    cam_y = CAMERA_HEIGHT
+    cam_z = camera_player.position
+    cam_yaw = camera_player.heading * 0.6
+
     base_segment = int(camera_player.position // SEGMENT_LENGTH) % TRACK_LENGTH
-    max_y = SCREEN_HEIGHT
-    x = 0.0
+    road_half = ROAD_WIDTH * 0.5
+
+    quads: list[tuple[float, tuple[int, int, int], list[tuple[float, float, float]]]] = []
+
+    x_acc = 0.0
     dx = 0.0
+    world_z0 = camera_player.position
 
-    for n in range(DRAW_DISTANCE):
-        idx = (base_segment + n) % TRACK_LENGTH
-        seg = track[idx]
-        next_seg = track[(idx + 1) % TRACK_LENGTH]
+    for n in range(min(DRAW_DISTANCE, 120)):
+        idx_seg = (base_segment + n) % TRACK_LENGTH
+        seg = track[idx_seg]
+        seg2 = track[(idx_seg + 1) % TRACK_LENGTH]
 
-        z1 = n * SEGMENT_LENGTH
-        z2 = (n + 1) * SEGMENT_LENGTH
-        x1, y1, w1 = project(x, seg.y, z1, camera_player.x * ROAD_WIDTH, CAMERA_HEIGHT, 0)
-        x += dx
-        dx += seg.curve * 0.03
-        x2, y2, w2 = project(x, next_seg.y, z2, camera_player.x * ROAD_WIDTH, CAMERA_HEIGHT, 0)
+        z0 = world_z0 + n * SEGMENT_LENGTH
+        z1 = world_z0 + (n + 1) * SEGMENT_LENGTH
 
-        if y2 >= max_y:
-            continue
-        max_y = y2
-        draw_segment(surface, x1, y1, w1, x2, y2, w2, (idx // 3) % 2 == 0)
+        x0 = x_acc
+        x_acc += dx
+        dx += seg.curve * 0.03 * ROAD_WIDTH * 0.2
+        x1 = x_acc
+
+        y0 = seg.y
+        y1 = seg2.y
+
+        dark = (idx_seg // 3) % 2 == 0
+        road_col = (58, 58, 58) if dark else (68, 68, 68)
+        rumble_col = (220, 50, 50) if dark else (245, 245, 245)
+        wall_col = (165, 165, 180)
+
+        road_quad = [
+            (x0 - road_half, y0, z0),
+            (x0 + road_half, y0, z0),
+            (x1 + road_half, y1, z1),
+            (x1 - road_half, y1, z1),
+        ]
+        quads.append((z0, road_col, road_quad))
+
+        r0 = road_half * 1.12
+        r1 = road_half * 1.12
+        left_rumble = [(x0 - r0, y0, z0), (x0 - road_half, y0, z0), (x1 - road_half, y1, z1), (x1 - r1, y1, z1)]
+        right_rumble = [(x0 + road_half, y0, z0), (x0 + r0, y0, z0), (x1 + r1, y1, z1), (x1 + road_half, y1, z1)]
+        quads.append((z0 + 0.1, rumble_col, left_rumble))
+        quads.append((z0 + 0.1, rumble_col, right_rumble))
+
+        wh = 240
+        left_wall = [(x0 - road_half * 1.02, y0, z0), (x0 - road_half * 1.02, y0 - wh, z0), (x1 - road_half * 1.02, y1 - wh, z1), (x1 - road_half * 1.02, y1, z1)]
+        right_wall = [(x0 + road_half * 1.02, y0, z0), (x0 + road_half * 1.02, y0 - wh, z0), (x1 + road_half * 1.02, y1 - wh, z1), (x1 + road_half * 1.02, y1, z1)]
+        quads.append((z0 + 0.2, wall_col, left_wall))
+        quads.append((z0 + 0.2, wall_col, right_wall))
+
+        # scenery blocks (actual 3D prisms)
+        if n % 5 == 0:
+            s_off = road_half * 1.45
+            h = 380
+            w = 140
+            # left tree block face
+            left_face = [(x0 - s_off - w, y0, z0), (x0 - s_off - w, y0 - h, z0), (x1 - s_off - w, y1 - h, z1), (x1 - s_off - w, y1, z1)]
+            right_face = [(x0 + s_off + w, y0, z0), (x0 + s_off + w, y0 - h, z0), (x1 + s_off + w, y1 - h, z1), (x1 + s_off + w, y1, z1)]
+            quads.append((z0 + 0.3, (42, 120, 46), left_face))
+            quads.append((z0 + 0.3, (42, 120, 46), right_face))
+
+    quads.sort(key=lambda t: t[0], reverse=True)
+    for _, color, poly in quads:
+        draw_quad_3d(surface, poly, color, cam_x, cam_y, cam_z, cam_yaw)
 
     if remote_player:
         rel_z = wrap_distance(remote_player.position, camera_player.position)
-        rel_x = remote_player.x - camera_player.x
-        draw_remote_marker(surface, rel_z, rel_x, remote_player.car_color)
+        rel_world_z = cam_z + rel_z
+        car_x = remote_player.x * ROAD_WIDTH
+        car_y = -80
+        car_w = 120
+        car_h = 70
+        car = [
+            (car_x - car_w, car_y, rel_world_z),
+            (car_x + car_w, car_y, rel_world_z),
+            (car_x + car_w, car_y - car_h, rel_world_z),
+            (car_x - car_w, car_y - car_h, rel_world_z),
+        ]
+        draw_quad_3d(surface, car, remote_player.car_color, cam_x, cam_y, cam_z, cam_yaw)
 
 
 def mode_label(mode: str) -> str:

@@ -3,7 +3,7 @@
 A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a USB drive and package to a standalone Windows `.exe`.
 
 ## Features
-- Pseudo-3D retro road rendering (classic sim illusion).
+- Actual 3D-style road/world rendering using camera-space polygon projection (in Pygame).
 - Track with strong turns, elevation changes, visible wall barriers, and roadside scenery.
 - Crash physics on wall impact with speed-based outcomes (stall or explosion).
 - Race mode with 3-lap win condition and start countdown.
