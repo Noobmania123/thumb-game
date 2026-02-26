@@ -4,7 +4,7 @@ A pseudo-3D **2D racing game** made in Python + Pygame, designed to run from a U
 
 ## Features
 - Pseudo-3D retro road rendering (classic sim illusion).
-- Track with strong turns, elevation changes, and visible wall barriers.
+- Track with strong turns, elevation changes, visible wall barriers, and roadside scenery.
 - Crash physics on wall impact (bounce + speed penalty + recovery timer).
 - Race mode with 3-lap win condition and start countdown.
 - Multiplayer:
@@ -38,7 +38,8 @@ python main.py --performance auto
 ### Global
 - `TAB`: cycle mode (single → local → online host → online join)
 - `F1/F2/F3/F4`: jump directly to mode
-- `R`: toggle/restart race mode
+- `R`: hard restart after a crash/explosion (or normal restart)
+- `T`: toggle race mode
 - `F8`: cycle performance preset while running
 
 ## Game modes
@@ -98,3 +99,9 @@ For online play across devices, allow UDP port `50555` (or your chosen port) in 
 - Wait for the loading bar to reach 100%; it now updates in steps.
 - The game now reuses loading fonts and updates only on percent changes to avoid startup stalls.
 - If packaged as EXE, run it from a terminal once to capture any fatal error output.
+
+
+## Crash outcomes by speed
+- **High-speed wall hit:** car explodes and is disabled.
+- **Lower-speed wall hit:** car stalls and is disabled.
+- In both cases, press **R** to restart.

@@ -25,6 +25,7 @@ RACE_LAPS = 3
 WALL_LIMIT = 0.95
 WALL_BOUNCE = 0.45
 CRASH_COOLDOWN = 0.9
+EXPLOSION_SPEED_THRESHOLD = 0.62  # percentage of MAX_SPEED
 
 MODE_ORDER = ["single", "local", "online-host", "online-join"]
 PERF_ORDER = ["ultra-low", "low", "normal"]
@@ -57,6 +58,8 @@ class PlayerState:
     lap: int = 0
     crashed_until: float = 0.0
     car_color: tuple[int, int, int] = (230, 40, 50)
+    out_of_action: bool = False
+    exploded: bool = False
 
 
 @dataclass
@@ -281,12 +284,53 @@ def draw_segment(surface: pygame.Surface, x1: float, y1: float, w1: float, x2: f
     pygame.draw.polygon(surface, (165, 165, 180), left_wall)
     pygame.draw.polygon(surface, (165, 165, 180), right_wall)
 
+    # roadside scenery
+    if int(y1) % 2 == 0:
+        tree_h1 = w1 * 0.16
+        tree_h2 = w2 * 0.16
+        left_tree = [
+            (x1 - w1 * 1.35, y1),
+            (x1 - w1 * 1.30, y1 - tree_h1),
+            (x2 - w2 * 1.30, y2 - tree_h2),
+            (x2 - w2 * 1.35, y2),
+        ]
+        right_tree = [
+            (x1 + w1 * 1.35, y1),
+            (x1 + w1 * 1.30, y1 - tree_h1),
+            (x2 + w2 * 1.30, y2 - tree_h2),
+            (x2 + w2 * 1.35, y2),
+        ]
+        pygame.draw.polygon(surface, (44, 120, 44), left_tree)
+        pygame.draw.polygon(surface, (44, 120, 44), right_tree)
+    else:
+        post_h1 = w1 * 0.11
+        post_h2 = w2 * 0.11
+        left_post = [
+            (x1 - w1 * 1.18, y1),
+            (x1 - w1 * 1.16, y1 - post_h1),
+            (x2 - w2 * 1.16, y2 - post_h2),
+            (x2 - w2 * 1.18, y2),
+        ]
+        right_post = [
+            (x1 + w1 * 1.18, y1),
+            (x1 + w1 * 1.16, y1 - post_h1),
+            (x2 + w2 * 1.16, y2 - post_h2),
+            (x2 + w2 * 1.18, y2),
+        ]
+        pygame.draw.polygon(surface, (220, 220, 120), left_post)
+        pygame.draw.polygon(surface, (220, 220, 120), right_post)
+
 
 def draw_player_car(surface: pygame.Surface, player: PlayerState, speed_percent: float, crashed: bool, x_offset: int = 0) -> None:
     base_y = SCREEN_HEIGHT - 70
     center_x = SCREEN_WIDTH // 2 + int(player.x * SCREEN_WIDTH * 0.35) + x_offset
     bob = int(math.sin(pygame.time.get_ticks() * 0.02) * (2 + speed_percent * 5))
-    color = (255, 180, 30) if crashed else player.car_color
+    if player.exploded:
+        color = (255, 110, 20)
+    elif crashed:
+        color = (255, 180, 30)
+    else:
+        color = player.car_color
 
     pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x - 35, base_y + 6 + bob, 10, 14))
     pygame.draw.rect(surface, (20, 20, 20), pygame.Rect(center_x + 25, base_y + 6 + bob, 10, 14))
@@ -312,13 +356,24 @@ def wrap_distance(a: float, b: float) -> float:
     return d
 
 
-def handle_crash(player: PlayerState, now: float) -> bool:
-    if abs(player.x) <= WALL_LIMIT:
-        return False
+def handle_crash(player: PlayerState, now: float) -> str | None:
+    if abs(player.x) <= WALL_LIMIT or player.out_of_action:
+        return None
+
+    speed_pct = player.speed / max(1.0, MAX_SPEED)
     player.x = max(-WALL_LIMIT, min(WALL_LIMIT, player.x))
-    player.speed *= WALL_BOUNCE
+
+    if speed_pct >= EXPLOSION_SPEED_THRESHOLD:
+        player.speed = 0.0
+        player.out_of_action = True
+        player.exploded = True
+        return "explode"
+
+    player.speed = 0.0
+    player.out_of_action = True
+    player.exploded = False
     player.crashed_until = now + CRASH_COOLDOWN
-    return True
+    return "stall"
 
 
 def update_player(
@@ -330,7 +385,11 @@ def update_player(
     brake: bool,
     now: float,
     can_drive: bool,
-) -> bool:
+ ) -> str | None:
+    if player.out_of_action:
+        player.speed = 0.0
+        return None
+
     accel = DECEL
     if can_drive:
         if accelerate:
@@ -348,7 +407,7 @@ def update_player(
         player.x += 2.3 * dt * (speed_factor + 0.3)
 
     player.speed = max(0.0, min(MAX_SPEED, player.speed + accel * dt))
-    crashed = handle_crash(player, now)
+    crash_event = handle_crash(player, now)
 
     total = TRACK_LENGTH * SEGMENT_LENGTH
     prev = player.position
@@ -356,7 +415,7 @@ def update_player(
     if player.position < prev and player.speed > 0:
         player.lap += 1
 
-    return crashed
+    return crash_event
 
 
 def render_world(surface: pygame.Surface, track: list[Segment], camera_player: PlayerState, remote_player: PlayerState | None) -> None:
@@ -512,6 +571,10 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
                     net.close()
                     player1, player2, net, race = init_mode(mode, host, port, race.enabled)
                 elif event.key == pygame.K_r:
+                    race_setting = race.enabled
+                    net.close()
+                    player1, player2, net, race = init_mode(mode, host, port, race_setting)
+                elif event.key == pygame.K_t:
                     race.enabled = not race.enabled
                     player1, player2, net, race = init_mode(mode, host, port, race.enabled)
                 elif event.key == pygame.K_F8:
@@ -521,7 +584,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
         race_started = not race.enabled or now >= race.countdown_end
         can_drive = race_started and not race.finished
 
-        crash1 = update_player(
+        crash1_event = update_player(
             player1,
             dt,
             steer_left=keys[pygame.K_a] or keys[pygame.K_LEFT],
@@ -532,9 +595,9 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             can_drive=can_drive,
         )
 
-        crash2 = False
+        crash2_event: str | None = None
         if mode == "local":
-            crash2 = update_player(
+            crash2_event = update_player(
                 player2,
                 dt,
                 steer_left=keys[pygame.K_j],
@@ -568,7 +631,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
         hud_lines = [
             f"Mode: {mode_label(mode)} | Perf: {profile} (F8 cycle)",
             f"P1 Speed: {int(player1.speed * 0.15):03d} km/h  Lap: {player1.lap}/{RACE_LAPS if race.enabled else '-'}",
-            "Race Mode: ON (R)" if race.enabled else "Race Mode: OFF (R)",
+            "Race Mode: ON (T)" if race.enabled else "Race Mode: OFF (T)",
             "Switch mode: TAB / F1-F4",
         ]
 
@@ -579,8 +642,13 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
         if mode in {"online-host", "online-join"}:
             hud_lines.append(f"Network: {'connected' if net.connected else 'waiting'} ({host}:{port})")
 
-        if crash1 or crash2:
-            hud_lines.append("CRASH! Wall hit -> speed reduced")
+        if crash1_event == "explode" or crash2_event == "explode":
+            hud_lines.append("BOOM! High-speed crash. Car destroyed. Press R to restart.")
+        elif crash1_event == "stall" or crash2_event == "stall":
+            hud_lines.append("Crash! Car stopped. Press R to restart.")
+
+        if player1.out_of_action or (mode == "local" and player2.out_of_action):
+            hud_lines.append("Restart required: press R")
 
         for i, line in enumerate(hud_lines):
             screen.blit(font.render(line, True, (255, 255, 255)), (12, 10 + i * 20))
@@ -593,7 +661,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             text = big_font.render(f"{race.winner} Wins! (R to restart)", True, (255, 230, 80))
             screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 70))
 
-        screen.blit(font.render("P1: WASD/Arrows", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
+        screen.blit(font.render("P1: WASD/Arrows | R restart | T race toggle", True, (255, 255, 255)), (12, SCREEN_HEIGHT - 24))
         pygame.display.flip()
 
     net.close()
