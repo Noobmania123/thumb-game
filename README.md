@@ -82,6 +82,22 @@ python main.py --performance auto
 - Runtime adaptive downgrade if frame-time stays too high.
 - Frame delta clamp to avoid long-frame simulation stalls.
 
+## Modding
+Mods are JSON files that can change basic gameplay, colors, and track layout without editing code.
+
+Run with a mod:
+
+```bash
+python main.py --mod mods/neon_forest.json
+```
+
+Supported top-level sections:
+- `gameplay`: `max_display_kmh`, `explosion_speed_threshold`, `race_laps`
+- `colors`: `player1`, `player2`, `walls`, `tree_trunk`, `tree_crown`, `road_dark`, `road_light` as RGB arrays
+- `track.pattern`: list of `{"length": 120, "curve": 0.8, "hill": 40}` sections
+
+A sample mod is included at `mods/neon_forest.json`.
+
 ## Build Windows EXE
 On Windows, run:
 

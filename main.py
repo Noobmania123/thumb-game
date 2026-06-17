@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 # Prefer software rendering on older/low-power GPUs to avoid black-screen GPU driver issues.
@@ -42,6 +43,29 @@ ACCEL = 0.0
 BRAKING = 0.0
 DECEL = 0.0
 KMH_FACTOR = 0.0
+
+TRACK_PATTERN = [
+    (180, 0.0, 0),
+    (90, 0.9, 40),
+    (80, 1.25, 30),
+    (120, 0.0, -30),
+    (110, -1.15, -50),
+    (90, -0.9, 20),
+    (200, 0.0, 0),
+    (100, 1.45, 70),
+    (120, 0.0, 40),
+    (140, -1.3, -70),
+    (140, 0.0, 0),
+]
+
+P1_COLOR = (230, 40, 50)
+P2_COLOR = (40, 160, 255)
+WALL_COLOR = (210, 210, 225)
+TREE_TRUNK_COLOR = (92, 58, 34)
+TREE_CROWN_COLOR = (34, 126, 42)
+ROAD_DARK_COLOR = (58, 58, 58)
+ROAD_LIGHT_COLOR = (68, 68, 68)
+MOD_NAME = "Vanilla"
 
 
 @dataclass
@@ -136,6 +160,87 @@ class NetSession:
             self.sock.close()
 
 
+def parse_color(value: object, fallback: tuple[int, int, int]) -> tuple[int, int, int]:
+    if not isinstance(value, list) or len(value) != 3:
+        return fallback
+    channels: list[int] = []
+    for channel in value:
+        if not isinstance(channel, int):
+            return fallback
+        channels.append(max(0, min(255, channel)))
+    return (channels[0], channels[1], channels[2])
+
+
+def parse_track_pattern(value: object) -> list[tuple[int, float, float]] | None:
+    if not isinstance(value, list) or not value:
+        return None
+
+    parsed: list[tuple[int, float, float]] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            return None
+        length = entry.get("length")
+        curve = entry.get("curve", 0.0)
+        hill = entry.get("hill", 0.0)
+        if not isinstance(length, int) or length <= 0:
+            return None
+        if not isinstance(curve, (int, float)) or not isinstance(hill, (int, float)):
+            return None
+        parsed.append((max(10, min(400, length)), float(curve), float(hill)))
+    return parsed
+
+
+def load_mod(path: str | None) -> str:
+    """Load a simple JSON mod and apply supported gameplay/visual overrides."""
+    global MOD_NAME, P1_COLOR, P2_COLOR, WALL_COLOR, TREE_TRUNK_COLOR, TREE_CROWN_COLOR
+    global ROAD_DARK_COLOR, ROAD_LIGHT_COLOR, MAX_DISPLAY_KMH, EXPLOSION_SPEED_THRESHOLD
+    global RACE_LAPS, TRACK_PATTERN
+
+    if not path:
+        recalc_physics()
+        return MOD_NAME
+
+    mod_path = Path(path)
+    with mod_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError("Mod file root must be a JSON object")
+
+    MOD_NAME = str(data.get("name", mod_path.stem))
+
+    gameplay = data.get("gameplay", {})
+    if isinstance(gameplay, dict):
+        max_kmh = gameplay.get("max_display_kmh")
+        if isinstance(max_kmh, (int, float)):
+            MAX_DISPLAY_KMH = int(max(80, min(600, max_kmh)))
+        threshold = gameplay.get("explosion_speed_threshold")
+        if isinstance(threshold, (int, float)):
+            EXPLOSION_SPEED_THRESHOLD = max(0.1, min(0.95, float(threshold)))
+        laps = gameplay.get("race_laps")
+        if isinstance(laps, int):
+            RACE_LAPS = max(1, min(20, laps))
+
+    colors = data.get("colors", {})
+    if isinstance(colors, dict):
+        P1_COLOR = parse_color(colors.get("player1"), P1_COLOR)
+        P2_COLOR = parse_color(colors.get("player2"), P2_COLOR)
+        WALL_COLOR = parse_color(colors.get("walls"), WALL_COLOR)
+        TREE_TRUNK_COLOR = parse_color(colors.get("tree_trunk"), TREE_TRUNK_COLOR)
+        TREE_CROWN_COLOR = parse_color(colors.get("tree_crown"), TREE_CROWN_COLOR)
+        ROAD_DARK_COLOR = parse_color(colors.get("road_dark"), ROAD_DARK_COLOR)
+        ROAD_LIGHT_COLOR = parse_color(colors.get("road_light"), ROAD_LIGHT_COLOR)
+
+    track = data.get("track", {})
+    if isinstance(track, dict):
+        pattern = parse_track_pattern(track.get("pattern"))
+        if pattern:
+            TRACK_PATTERN = pattern
+
+    recalc_physics()
+    return MOD_NAME
+
+
 def recalc_physics() -> None:
     global MAX_SPEED, ACCEL, BRAKING, DECEL, KMH_FACTOR
     MAX_SPEED = SEGMENT_LENGTH / (1 / FPS) * 0.9
@@ -215,22 +320,9 @@ def build_track(progress_cb: Callable[[float], None] | None = None) -> list[Segm
         return start + length
 
     cursor = 0
-    pattern = [
-        (180, 0.0, 0),
-        (90, 0.9, 40),
-        (80, 1.25, 30),
-        (120, 0.0, -30),
-        (110, -1.15, -50),
-        (90, -0.9, 20),
-        (200, 0.0, 0),
-        (100, 1.45, 70),
-        (120, 0.0, 40),
-        (140, -1.3, -70),
-        (140, 0.0, 0),
-    ]
 
     while cursor < TRACK_LENGTH:
-        for length, curve, hill in pattern:
+        for length, curve, hill in TRACK_PATTERN:
             if cursor >= TRACK_LENGTH:
                 break
             real_len = min(length, TRACK_LENGTH - cursor)
@@ -537,9 +629,9 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
         y1 = seg2.y
 
         dark = (idx_seg // 3) % 2 == 0
-        road_col = (58, 58, 58) if dark else (68, 68, 68)
+        road_col = ROAD_DARK_COLOR if dark else ROAD_LIGHT_COLOR
         rumble_col = (220, 50, 50) if dark else (245, 245, 245)
-        wall_col = (210, 210, 225)
+        wall_col = WALL_COLOR
 
         road_quad = [
             (x0 - road_half, y0, z0),
@@ -579,10 +671,10 @@ def render_world(surface: pygame.Surface, track: list[Segment], camera_player: P
             right_trunk = [(x0 + s_off + trunk_w, y0, z0), (x0 + s_off + trunk_w, y0 - trunk_h, z0), (x1 + s_off + trunk_w, y1 - trunk_h, z1), (x1 + s_off + trunk_w, y1, z1)]
             left_crown = [(x0 - s_off - crown_w, y0 - trunk_h + 30, z0), (x0 - s_off - crown_w, y0 - crown_h, z0), (x1 - s_off - crown_w, y1 - crown_h, z1), (x1 - s_off - crown_w, y1 - trunk_h + 30, z1)]
             right_crown = [(x0 + s_off + crown_w, y0 - trunk_h + 30, z0), (x0 + s_off + crown_w, y0 - crown_h, z0), (x1 + s_off + crown_w, y1 - crown_h, z1), (x1 + s_off + crown_w, y1 - trunk_h + 30, z1)]
-            quads.append((z0 + 0.31, (92, 58, 34), left_trunk))
-            quads.append((z0 + 0.31, (92, 58, 34), right_trunk))
-            quads.append((z0 + 0.30, (34, 126, 42), left_crown))
-            quads.append((z0 + 0.30, (34, 126, 42), right_crown))
+            quads.append((z0 + 0.31, TREE_TRUNK_COLOR, left_trunk))
+            quads.append((z0 + 0.31, TREE_TRUNK_COLOR, right_trunk))
+            quads.append((z0 + 0.30, TREE_CROWN_COLOR, left_crown))
+            quads.append((z0 + 0.30, TREE_CROWN_COLOR, right_crown))
 
     quads.sort(key=lambda t: t[0], reverse=True)
     for _, color, poly in quads:
@@ -619,8 +711,8 @@ def cycle_mode(current: str, direction: int = 1) -> str:
 
 
 def init_mode(mode: str, host: str, port: int, race_enabled: bool) -> tuple[PlayerState, PlayerState, NetSession, RaceState]:
-    p1 = PlayerState(name="P1", car_color=(230, 40, 50), x=-0.2)
-    p2 = PlayerState(name="P2", car_color=(40, 160, 255), x=0.2)
+    p1 = PlayerState(name="P1", car_color=P1_COLOR, x=-0.2)
+    p2 = PlayerState(name="P2", car_color=P2_COLOR, x=0.2)
     net = NetSession(mode, host, port)
     race = RaceState(enabled=race_enabled, countdown_end=time.perf_counter() + 2.5)
     return p1, p2, net, race
@@ -672,7 +764,8 @@ def show_loading_screen(screen: pygame.Surface, ui: LoadingUI, text: str, progre
             raise SystemExit(0)
 
 
-def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -> None:
+def run(mode: str, host: str, port: int, race_enabled: bool, performance: str, mod_path: str | None) -> None:
+    active_mod = load_mod(mod_path)
     profile = apply_performance_profile(performance)
 
     pygame.init()
@@ -788,7 +881,7 @@ def run(mode: str, host: str, port: int, race_enabled: bool, performance: str) -
             draw_player_car(screen, player2, player2.speed / max(1.0, MAX_SPEED), now < player2.crashed_until, x_offset=140)
 
         hud_lines = [
-            f"Mode: {mode_label(mode)} | Perf: {profile} (F8 cycle)",
+            f"Mode: {mode_label(mode)} | Perf: {profile} | Mod: {active_mod}",
             f"P1 Speed: {int(player1.speed * KMH_FACTOR):03d} km/h  Lap: {player1.lap}/{RACE_LAPS if race.enabled else '-'}",
             "Race Mode: ON (T)" if race.enabled else "Race Mode: OFF (T)",
             "Switch mode: TAB / F1-F4",
@@ -846,13 +939,14 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="Rendering profile (use ultra-low for Pentium / older i3)",
     )
+    parser.add_argument("--mod", default=None, help="Path to a JSON mod file")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     try:
-        run(args.mode, args.host, args.port, args.race, args.performance)
+        run(args.mode, args.host, args.port, args.race, args.performance, args.mod)
     except Exception as exc:
         print(f"Fatal error: {exc}")
         raise
