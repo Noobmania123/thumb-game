@@ -96,7 +96,12 @@ Supported top-level sections:
 - `colors`: `player1`, `player2`, `walls`, `tree_trunk`, `tree_crown`, `road_dark`, `road_light` as RGB arrays
 - `track.pattern`: list of `{"length": 120, "curve": 0.8, "hill": 40}` sections
 
-A sample mod is included at `mods/neon_forest.json`.
+Included mods:
+- `mods/neon_forest.json` - bright neon colors and medium-speed hills.
+- `mods/desert_sprint.json` - faster desert straights with gentle curves.
+- `mods/mountain_switchbacks.json` - slower technical mountain turns and hills.
+- `mods/city_night.json` - dark neon city racing with more laps.
+- `mods/training_oval.json` - safer low-speed oval for practicing rotation steering.
 
 ## Build Windows EXE
 On Windows, run:

@@ -1,0 +1,28 @@
+{
+  "name": "City Night",
+  "gameplay": {
+    "max_display_kmh": 300,
+    "explosion_speed_threshold": 0.78,
+    "race_laps": 4
+  },
+  "colors": {
+    "player1": [80, 255, 255],
+    "player2": [255, 210, 40],
+    "walls": [80, 95, 140],
+    "tree_trunk": [55, 55, 75],
+    "tree_crown": [90, 60, 160],
+    "road_dark": [20, 22, 34],
+    "road_light": [32, 35, 52]
+  },
+  "track": {
+    "pattern": [
+      {"length": 140, "curve": 0.0, "hill": 0},
+      {"length": 110, "curve": 0.9, "hill": 10},
+      {"length": 80, "curve": 0.0, "hill": -10},
+      {"length": 120, "curve": -0.9, "hill": 20},
+      {"length": 100, "curve": 0.65, "hill": -20},
+      {"length": 130, "curve": -0.65, "hill": 15},
+      {"length": 180, "curve": 0.0, "hill": 0}
+    ]
+  }
+}
