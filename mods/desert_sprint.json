@@ -1,0 +1,27 @@
+{
+  "name": "Desert Sprint",
+  "gameplay": {
+    "max_display_kmh": 300,
+    "explosion_speed_threshold": 0.82,
+    "race_laps": 3
+  },
+  "colors": {
+    "player1": [255, 70, 30],
+    "player2": [30, 170, 255],
+    "walls": [215, 170, 85],
+    "tree_trunk": [130, 85, 35],
+    "tree_crown": [190, 160, 55],
+    "road_dark": [80, 72, 60],
+    "road_light": [105, 95, 78]
+  },
+  "track": {
+    "pattern": [
+      {"length": 220, "curve": 0.0, "hill": 0},
+      {"length": 120, "curve": 0.35, "hill": 20},
+      {"length": 160, "curve": -0.45, "hill": -15},
+      {"length": 260, "curve": 0.0, "hill": 5},
+      {"length": 140, "curve": 0.6, "hill": 35},
+      {"length": 180, "curve": -0.55, "hill": -25}
+    ]
+  }
+}

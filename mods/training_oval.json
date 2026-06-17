@@ -1,0 +1,25 @@
+{
+  "name": "Training Oval",
+  "gameplay": {
+    "max_display_kmh": 220,
+    "explosion_speed_threshold": 0.9,
+    "race_laps": 5
+  },
+  "colors": {
+    "player1": [40, 120, 255],
+    "player2": [255, 80, 80],
+    "walls": [255, 255, 255],
+    "tree_trunk": [90, 55, 25],
+    "tree_crown": [45, 170, 70],
+    "road_dark": [55, 55, 55],
+    "road_light": [75, 75, 75]
+  },
+  "track": {
+    "pattern": [
+      {"length": 220, "curve": 0.0, "hill": 0},
+      {"length": 180, "curve": 0.45, "hill": 0},
+      {"length": 220, "curve": 0.0, "hill": 0},
+      {"length": 180, "curve": 0.45, "hill": 0}
+    ]
+  }
+}

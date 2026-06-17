@@ -1,0 +1,28 @@
+{
+  "name": "Mountain Switchbacks",
+  "gameplay": {
+    "max_display_kmh": 260,
+    "explosion_speed_threshold": 0.68,
+    "race_laps": 2
+  },
+  "colors": {
+    "player1": [245, 245, 245],
+    "player2": [255, 170, 40],
+    "walls": [130, 130, 145],
+    "tree_trunk": [70, 45, 25],
+    "tree_crown": [25, 120, 45],
+    "road_dark": [42, 45, 50],
+    "road_light": [60, 65, 72]
+  },
+  "track": {
+    "pattern": [
+      {"length": 90, "curve": 0.75, "hill": 55},
+      {"length": 80, "curve": -0.9, "hill": 65},
+      {"length": 110, "curve": 0.95, "hill": -35},
+      {"length": 80, "curve": -0.8, "hill": 45},
+      {"length": 140, "curve": 0.2, "hill": -70},
+      {"length": 100, "curve": -1.05, "hill": 30},
+      {"length": 160, "curve": 0.0, "hill": -20}
+    ]
+  }
+}

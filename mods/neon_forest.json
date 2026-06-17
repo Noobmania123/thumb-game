@@ -1,0 +1,27 @@
+{
+  "name": "Neon Forest",
+  "gameplay": {
+    "max_display_kmh": 320,
+    "explosion_speed_threshold": 0.75,
+    "race_laps": 2
+  },
+  "colors": {
+    "player1": [255, 40, 180],
+    "player2": [40, 220, 255],
+    "walls": [245, 245, 255],
+    "tree_trunk": [80, 40, 120],
+    "tree_crown": [40, 220, 120],
+    "road_dark": [35, 35, 50],
+    "road_light": [50, 50, 70]
+  },
+  "track": {
+    "pattern": [
+      {"length": 160, "curve": 0.0, "hill": 0},
+      {"length": 120, "curve": 0.65, "hill": 40},
+      {"length": 90, "curve": -0.8, "hill": -30},
+      {"length": 180, "curve": 0.0, "hill": 10},
+      {"length": 130, "curve": 1.0, "hill": 70},
+      {"length": 130, "curve": -1.0, "hill": -60}
+    ]
+  }
+}
